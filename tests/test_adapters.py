@@ -1,5 +1,5 @@
 import pytest
-from battle.adapters.base import get_adapter
+from battle.adapters.base import GenericPluginAdapter, get_adapter
 from battle.adapters.baseline import BaselineAdapter
 from battle.adapters.superpowers import SuperpowersAdapter
 from battle.adapters.homerun import HomerunAdapter
@@ -58,5 +58,28 @@ def test_get_adapter_homerun(tmp_path):
 
 
 def test_get_adapter_unknown_raises():
-    with pytest.raises(ValueError, match="Unknown adapter"):
+    # No path → can't create a generic adapter → ValueError
+    with pytest.raises(ValueError):
         get_adapter("unknown-plugin", plugin_path=None)
+
+
+def test_get_adapter_unknown_with_path_returns_generic(tmp_path):
+    # Unknown name + path → falls back to GenericPluginAdapter
+    adapter = get_adapter("my-custom-plugin", plugin_path=str(tmp_path))
+    assert isinstance(adapter, GenericPluginAdapter)
+    assert adapter.plugin_id == "my-custom-plugin"
+
+
+def test_superpowers_options_has_system_prompt(tmp_path):
+    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert opts.system_prompt is not None
+    assert "benchmark" in opts.system_prompt.lower()
+    assert "EnterPlanMode" in opts.system_prompt
+
+
+def test_homerun_options_has_system_prompt(tmp_path):
+    adapter = HomerunAdapter(plugin_path=str(tmp_path))
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert opts.system_prompt is not None
+    assert "EnterPlanMode" in opts.system_prompt

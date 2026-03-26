@@ -63,6 +63,13 @@ class Config:
             local_path = path
         self._data[name] = local_path
         self._save()
+        # Warn if the resolved path has no plugin.json — plugin won't load
+        plugin_json = Path(local_path) / ".claude-plugin" / "plugin.json"
+        if not plugin_json.exists():
+            print(
+                f"Warning: {local_path!r} has no .claude-plugin/plugin.json — "
+                f"'{name}' will behave like baseline (no plugin skills loaded)."
+            )
 
     def list_plugins(self) -> dict[str, str]:
         return dict(self._data)
