@@ -1,23 +1,8 @@
 import json
-import os
 from dataclasses import dataclass
 
-import anthropic
-
-_anthropic_client: anthropic.Anthropic | None = None
-
-
-def _client() -> anthropic.Anthropic:
-    global _anthropic_client
-    if _anthropic_client is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "ANTHROPIC_API_KEY environment variable is not set. "
-                "Export it before running battle."
-            )
-        _anthropic_client = anthropic.Anthropic(api_key=api_key)
-    return _anthropic_client
+import anyio
+from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
 JUDGE_PROMPT = """\
 You are an expert code reviewer evaluating AI-generated code. Score the output on each dimension from 1 (very poor) to 10 (excellent).
@@ -65,6 +50,18 @@ class RubricScore:
         ) / 5
 
 
+async def _query_judge(prompt: str, model: str) -> str:
+    options = ClaudeAgentOptions(
+        model=model,
+        permission_mode="bypassPermissions",
+        allowed_tools=[],
+    )
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, ResultMessage):
+            return message.result or ""
+    return ""
+
+
 def score_cell(
     artifact_files: dict[str, str],
     acceptance_criteria: list[str],
@@ -88,13 +85,8 @@ def score_cell(
     criteria_text = "\n".join(f"- {c}" for c in acceptance_criteria)
     prompt = JUDGE_PROMPT.format(criteria=criteria_text, code_summary=code_summary)
 
-    response = _client().messages.create(
-        model=judge_model,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    text = anyio.run(_query_judge, prompt, judge_model)
 
-    text = next(b.text for b in response.content if b.type == "text")
     # Strip markdown code fences if present
     text = text.strip()
     if text.startswith("```"):
