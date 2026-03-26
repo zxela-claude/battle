@@ -1,4 +1,6 @@
 import json
+import shutil
+import tempfile
 from dataclasses import dataclass
 
 import anyio
@@ -51,15 +53,21 @@ class RubricScore:
 
 
 async def _query_judge(prompt: str, model: str) -> str:
-    options = ClaudeAgentOptions(
-        model=model,
-        permission_mode="bypassPermissions",
-        allowed_tools=[],
-    )
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, ResultMessage):
-            return message.result or ""
-    return ""
+    config_dir = tempfile.mkdtemp(prefix="battle_judge_cfg_")
+    try:
+        options = ClaudeAgentOptions(
+            model=model,
+            permission_mode="bypassPermissions",
+            allowed_tools=[],
+            # Isolated config dir — no session history from cell runs bleeds in
+            env={"CLAUDE_CONFIG_DIR": config_dir},
+        )
+        async for message in query(prompt=prompt, options=options):
+            if isinstance(message, ResultMessage):
+                return message.result or ""
+        return ""
+    finally:
+        shutil.rmtree(config_dir, ignore_errors=True)
 
 
 def score_cell(
