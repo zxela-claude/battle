@@ -12,7 +12,13 @@ Plugin selection for Claude Code feels subjective. `battle` makes it objective â
 pip install -e .
 ```
 
-Requires Python 3.11+ and an `ANTHROPIC_API_KEY` in your environment.
+Requires Python 3.11+ and a Claude account. Uses your existing Claude Code OAuth session â€” no API key needed.
+
+```bash
+cp .env.example .env
+# Fill in ANTHROPIC_AUTH_TOKEN (get it with: claude config get oauthToken)
+source .env
+```
 
 ## Quick start
 
