@@ -80,6 +80,7 @@ battle --plugins superpowers --models claude-sonnet-4-6,claude-opus-4-6
 | `spa` | React + Vite + TypeScript SPA with routing, contact form, validation, API call |
 | `mobile` | Expo React Native app with navigation and fetched post list |
 | `tooling` | TypeScript `wordcount` CLI with stdin support and Jest tests |
+| `api` | Express + TypeScript REST API with Zod validation and Jest tests |
 
 ## Scoring
 

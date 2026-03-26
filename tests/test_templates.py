@@ -21,6 +21,12 @@ def test_mobile_template_loads():
     assert len(t.acceptance_criteria) >= 3
 
 
+def test_api_template_loads():
+    t = get_template("api")
+    assert t.name == "api"
+    assert len(t.acceptance_criteria) >= 6
+
+
 def test_unknown_template_raises():
     with pytest.raises(KeyError, match="unknown"):
         get_template("unknown")
