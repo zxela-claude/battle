@@ -9,7 +9,6 @@ description = "Benchmark Claude Code plugins head-to-head"
 requires-python = ">=3.11"
 dependencies = [
     "claude-agent-sdk>=0.1.50",
-    "anthropic>=0.50.0",
     "rich>=13.0.0",
     "anyio>=4.0.0",
 ]
