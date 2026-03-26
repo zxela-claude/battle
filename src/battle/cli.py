@@ -67,29 +67,28 @@ def cli_run(
         artifact_base_dir=artifact_dir,
     )
 
-    results = asyncio.run(run_matrix(matrix_config))
-    print(f"Completed {len(results)} cells. Evaluating...")
+    async def _run_and_evaluate() -> None:
+        results = await run_matrix(matrix_config)
+        print(f"Completed {len(results)} cells. Evaluating...")
+        for cell in results:
+            cell_artifact_dir = cell.artifact_dir
+            artifact_files: dict[str, str] = {}
+            if cell_artifact_dir and os.path.isdir(cell_artifact_dir):
+                for rel in cell.artifact_files:
+                    full = os.path.join(cell_artifact_dir, rel)
+                    try:
+                        artifact_files[rel] = open(full).read()
+                    except Exception:
+                        pass
+            rubric = await score_cell(
+                artifact_files=artifact_files,
+                acceptance_criteria=template.acceptance_criteria,
+                judge_model=judge_model,
+            )
+            static = run_eslint(artifact_dir=cell_artifact_dir or "")
+            storage.record_cell(run_id, cell, rubric, static)
 
-    for cell in results:
-        # Load artifact files for judge
-        cell_artifact_dir = cell.artifact_dir
-        artifact_files: dict[str, str] = {}
-        if cell_artifact_dir and os.path.isdir(cell_artifact_dir):
-            for rel in cell.artifact_files:
-                full = os.path.join(cell_artifact_dir, rel)
-                try:
-                    artifact_files[rel] = open(full).read()
-                except Exception:
-                    pass
-
-        rubric = score_cell(
-            artifact_files=artifact_files,
-            acceptance_criteria=template.acceptance_criteria,
-            judge_model=judge_model,
-        )
-        static = run_eslint(artifact_dir=cell_artifact_dir or "")
-        storage.record_cell(run_id, cell, rubric, static)
-
+    asyncio.run(_run_and_evaluate())
     manifest = storage.load_manifest(run_id)
 
     # Output

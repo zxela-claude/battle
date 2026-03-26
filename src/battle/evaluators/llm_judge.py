@@ -1,9 +1,6 @@
 import json
-import shutil
-import tempfile
 from dataclasses import dataclass
 
-import anyio
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
 JUDGE_PROMPT = """\
@@ -52,25 +49,7 @@ class RubricScore:
         ) / 5
 
 
-async def _query_judge(prompt: str, model: str) -> str:
-    config_dir = tempfile.mkdtemp(prefix="battle_judge_cfg_")
-    try:
-        options = ClaudeAgentOptions(
-            model=model,
-            permission_mode="bypassPermissions",
-            allowed_tools=[],
-            # Isolated config dir — no session history from cell runs bleeds in
-            env={"CLAUDE_CONFIG_DIR": config_dir},
-        )
-        async for message in query(prompt=prompt, options=options):
-            if isinstance(message, ResultMessage):
-                return message.result or ""
-        return ""
-    finally:
-        shutil.rmtree(config_dir, ignore_errors=True)
-
-
-def score_cell(
+async def score_cell(
     artifact_files: dict[str, str],
     acceptance_criteria: list[str],
     judge_model: str = "claude-opus-4-6",
@@ -93,7 +72,16 @@ def score_cell(
     criteria_text = "\n".join(f"- {c}" for c in acceptance_criteria)
     prompt = JUDGE_PROMPT.format(criteria=criteria_text, code_summary=code_summary)
 
-    text = anyio.run(_query_judge, prompt, judge_model)
+    options = ClaudeAgentOptions(
+        model=judge_model,
+        permission_mode="bypassPermissions",
+        allowed_tools=[],
+    )
+
+    text = ""
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, ResultMessage):
+            text = message.result or ""
 
     # Strip markdown code fences if present
     text = text.strip()

@@ -30,11 +30,8 @@ async def run_cell(
 ) -> CellResult:
     """Run one (plugin, model) cell and return its result."""
     cwd = tempfile.mkdtemp(prefix=f"battle_{adapter.plugin_id}_{run_index}_")
-    config_dir = tempfile.mkdtemp(prefix=f"battle_cfg_{adapter.plugin_id}_{run_index}_")
     try:
         options = adapter.get_options(model=model, cwd=cwd)
-        # Isolate session state — prevents history/MCP/plugin state leaking between cells
-        options.env["CLAUDE_CONFIG_DIR"] = config_dir
         result_text = ""
         cost_usd = 0.0
         num_turns = 0
@@ -82,4 +79,3 @@ async def run_cell(
         )
     finally:
         shutil.rmtree(cwd, ignore_errors=True)
-        shutil.rmtree(config_dir, ignore_errors=True)

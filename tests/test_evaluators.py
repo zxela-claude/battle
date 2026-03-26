@@ -11,10 +11,15 @@ def _json_str(ac=8, style=7, quality=7, security=9, bugs=8, rationale="Good"):
     })
 
 
-def test_score_cell_returns_rubric_score():
-    with patch("battle.evaluators.llm_judge.anyio") as mock_anyio:
-        mock_anyio.run.return_value = _json_str()
-        score = score_cell(
+async def test_score_cell_returns_rubric_score():
+    async def fake_query(prompt, options):
+        from claude_agent_sdk import ResultMessage
+        msg = MagicMock(spec=ResultMessage)
+        msg.result = _json_str()
+        yield msg
+
+    with patch("battle.evaluators.llm_judge.query", fake_query):
+        score = await score_cell(
             artifact_files={"index.tsx": "export default function App() {}"},
             acceptance_criteria=["App renders without errors"],
             judge_model="claude-opus-4-6",
@@ -24,10 +29,15 @@ def test_score_cell_returns_rubric_score():
     assert score.overall == pytest.approx((8 + 7 + 7 + 9 + 8) / 5, rel=0.01)
 
 
-def test_score_cell_handles_empty_artifacts():
-    with patch("battle.evaluators.llm_judge.anyio") as mock_anyio:
-        mock_anyio.run.return_value = _json_str(ac=1, style=1, quality=1, security=1, bugs=1, rationale="No code")
-        score = score_cell(
+async def test_score_cell_handles_empty_artifacts():
+    async def fake_query(prompt, options):
+        from claude_agent_sdk import ResultMessage
+        msg = MagicMock(spec=ResultMessage)
+        msg.result = _json_str(ac=1, style=1, quality=1, security=1, bugs=1, rationale="No code")
+        yield msg
+
+    with patch("battle.evaluators.llm_judge.query", fake_query):
+        score = await score_cell(
             artifact_files={},
             acceptance_criteria=["Build completes"],
             judge_model="claude-opus-4-6",
@@ -35,11 +45,17 @@ def test_score_cell_handles_empty_artifacts():
     assert score.overall < 5
 
 
-def test_score_cell_strips_markdown_fences():
+async def test_score_cell_strips_markdown_fences():
     fenced = "```json\n" + _json_str(ac=7, style=7, quality=7, security=7, bugs=7, rationale="Avg") + "\n```"
-    with patch("battle.evaluators.llm_judge.anyio") as mock_anyio:
-        mock_anyio.run.return_value = fenced
-        score = score_cell(
+
+    async def fake_query(prompt, options):
+        from claude_agent_sdk import ResultMessage
+        msg = MagicMock(spec=ResultMessage)
+        msg.result = fenced
+        yield msg
+
+    with patch("battle.evaluators.llm_judge.query", fake_query):
+        score = await score_cell(
             artifact_files={"app.py": "print('hello')"},
             acceptance_criteria=["Runs without errors"],
         )
