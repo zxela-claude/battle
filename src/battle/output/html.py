@@ -1,18 +1,23 @@
 import json
+import html as _html
 from dataclasses import asdict
 from battle.storage import RunManifest
 
 
 def manifest_to_html(manifest: RunManifest) -> str:
     data = asdict(manifest)
-    data_json = json.dumps(data)
+    data_json = json.dumps(data).replace("</", "<\\/")
+
+    safe_run_id = _html.escape(manifest.run_id)
+    safe_test_name = _html.escape(manifest.test_name)
+    safe_total_cost = f"{manifest.total_cost_usd:.3f}"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Battle Report — {manifest.run_id}</title>
+<title>Battle Report — {safe_run_id}</title>
 <style>
   body {{ font-family: system-ui, sans-serif; max-width: 1200px; margin: 40px auto; padding: 0 20px; background: #0f0f0f; color: #e0e0e0; }}
   h1 {{ color: #fff; }}
@@ -34,9 +39,9 @@ def manifest_to_html(manifest: RunManifest) -> str:
 <body>
 <h1>⚔️ Battle Report</h1>
 <div class="meta">
-  <strong>Run ID:</strong> {manifest.run_id} &nbsp;|&nbsp;
-  <strong>Test:</strong> {manifest.test_name} &nbsp;|&nbsp;
-  <strong>Total cost:</strong> ${manifest.total_cost_usd:.3f}
+  <strong>Run ID:</strong> {safe_run_id} &nbsp;|&nbsp;
+  <strong>Test:</strong> {safe_test_name} &nbsp;|&nbsp;
+  <strong>Total cost:</strong> ${safe_total_cost}
 </div>
 <table id="results-table">
   <thead>
