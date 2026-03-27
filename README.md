@@ -32,7 +32,7 @@ source .venv/bin/activate
 
 # Register plugins (local path or GitHub shorthand)
 battle register superpowers obra/superpowers
-battle register homerun zxela/claude-plugins
+battle register homerun zxela/claude-plugins --trigger /homerun
 
 # Run a battle
 battle run --plugins superpowers,homerun --models claude-sonnet-4-6 --test spa
@@ -47,13 +47,28 @@ Uses your existing Claude Code OAuth session — no API key needed. Get a token 
 Register a plugin. Accepts a local path or `owner/repo` GitHub shorthand (auto-cloned to `~/.battle/plugins/`).
 
 ```bash
-battle register superpowers ~/repos/obra-superpowers   # local
-battle register superpowers obra/superpowers            # GitHub
+battle register superpowers ~/repos/obra-superpowers        # local path
+battle register superpowers obra/superpowers                 # GitHub shorthand
+
+# Plugins activated by a slash command — declare the trigger at registration
+battle register homerun zxela/claude-plugins --trigger /homerun
+
+# Plugins that need a context block in the system prompt
+battle register my-plugin /local/path --system-prefix "You are my-plugin assistant."
 ```
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--trigger <cmd>` | Slash command prepended to the task prompt (e.g. `/homerun`). Required for skill-based plugins that only activate on their own command. |
+| `--system-prefix <text>` | Text prepended to the benchmark system prompt for this plugin's cells. Useful for persona or context blocks. |
+
+Invocation metadata is stored in `~/.battle/plugins.json` alongside the path. No plugin internals are scraped — everything is declared explicitly at registration time.
 
 ### `battle list`
 
-List registered plugins and whether their paths exist on disk.
+List registered plugins, their paths, and any invocation metadata (trigger, system-prefix).
 
 ### `battle run`
 
@@ -120,7 +135,9 @@ src/battle/
 ├── config.py           # Plugin registry (~/.battle/plugins.json)
 ├── runner.py           # run_cell() → CellResult
 ├── orchestrator.py     # run_matrix() → asyncio.gather() over all cells
-├── adapters/           # PluginAdapter ABC + baseline/superpowers/homerun
+├── adapters/
+│   ├── base.py         # PluginAdapter ABC + GenericPluginAdapter + get_adapter()
+│   └── baseline.py     # No-plugin control cell
 ├── tests/              # Task prompt templates
 ├── evaluators/
 │   ├── llm_judge.py    # Claude-as-judge → RubricScore
@@ -133,6 +150,16 @@ src/battle/
 ```
 
 All cells run in parallel via `asyncio.gather()`. Each cell gets an isolated temp directory; artifacts are copied to permanent storage after completion.
+
+### How plugins are loaded
+
+Each cell run:
+1. The plugin's `.claude/settings.json` (hooks) is copied into the cell's temp directory so Claude Code discovers it naturally
+2. The plugin's skills are made available via `ClaudeAgentOptions(plugins=[...], setting_sources=["user", "project"])`
+3. If a `--trigger` was registered, it is prepended to the task prompt (e.g. `/homerun build a REST API`)
+4. If a `--system-prefix` was registered, it is prepended to the benchmark system prompt
+
+There are no plugin-specific adapter subclasses. All plugins use `GenericPluginAdapter` parameterised by the metadata stored in `~/.battle/plugins.json`.
 
 ## CI Integration
 
@@ -148,6 +175,11 @@ Battle can run in CI pipelines and fail the build if any plugin falls below a sc
 An example workflow is included at [`.github/workflows/battle-benchmark.yml`](.github/workflows/battle-benchmark.yml). It runs on PRs and nightly:
 
 ```yaml
+- name: Register plugins
+  run: |
+    battle register superpowers obra/superpowers
+    battle register homerun zxela/claude-plugins --trigger /homerun
+
 - name: Run benchmark
   run: |
     battle run \
