@@ -16,5 +16,7 @@ class BaselineAdapter(PluginAdapter):
             system_prompt=BENCHMARK_SYSTEM,
             permission_mode="bypassPermissions",
             allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
-            setting_sources=["user", "project"],
+            # "project" only — deliberately excludes user-level ~/.claude/ so that
+            # globally installed plugins/skills don't contaminate the control cell.
+            setting_sources=["project"],
         )
