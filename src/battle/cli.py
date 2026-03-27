@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import sys
 from pathlib import Path
 
 from .config import Config
@@ -11,10 +12,21 @@ from .storage import RunStorage
 from .tests.base import get_template
 
 
-def cli_register(name: str, path: str) -> None:
+def cli_register(
+    name: str,
+    path: str,
+    trigger: str | None = None,
+    system_prefix: str | None = None,
+) -> None:
     cfg = Config()
-    cfg.register(name, path)
-    print(f"Registered plugin '{name}' at {path}")
+    cfg.register(name, path, trigger=trigger, system_prefix=system_prefix)
+    extra = []
+    if trigger:
+        extra.append(f"trigger={trigger!r}")
+    if system_prefix:
+        extra.append(f"system_prefix set")
+    suffix = f" ({', '.join(extra)})" if extra else ""
+    print(f"Registered plugin '{name}' at {path}{suffix}")
 
 
 def cli_list() -> None:
@@ -23,10 +35,16 @@ def cli_list() -> None:
     if not plugins:
         print("No plugins registered. Use: battle register <name> <path>")
         return
-    for name, path in plugins.items():
+    for name, meta in plugins.items():
+        path = meta.get("path", "")
         exists = "✓" if Path(path).exists() else "✗ (not found)"
-        print(f"  {name}: {path} {exists}")
-
+        parts = [f"  {name}: {path} {exists}"]
+        if meta.get("trigger"):
+            parts.append(f"    trigger:       {meta['trigger']}")
+        if meta.get("system_prefix"):
+            prefix_preview = meta["system_prefix"][:60].replace("\n", " ")
+            parts.append(f"    system_prefix: {prefix_preview!r}...")
+        print("\n".join(parts))
 
 
 def cli_run(
@@ -46,11 +64,11 @@ def cli_run(
     # Filter out 'baseline' — it's always auto-included by the orchestrator
     plugins = [p for p in plugins if p != "baseline"]
 
-    # Resolve plugin paths
-    plugin_paths = {}
+    # Resolve plugin metadata
+    plugin_meta: dict[str, dict] = {}
     for name in plugins:
         try:
-            plugin_paths[name] = cfg.resolve(name)
+            plugin_meta[name] = cfg.get_meta(name)
         except KeyError:
             print(f"Error: Plugin '{name}' not registered. Run: battle register {name} <path-or-repo>")
             return
@@ -69,7 +87,7 @@ def cli_run(
 
     matrix_config = MatrixConfig(
         plugin_names=plugins,
-        plugin_paths=plugin_paths,
+        plugin_meta=plugin_meta,
         models=models,
         prompt=template.prompt,
         runs_per_cell=runs,
@@ -149,17 +167,28 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # battle register <name> <path>
-    reg = subparsers.add_parser("register", help="Register a plugin by name and local path")
+    # battle register <name> <path> [--trigger /cmd] [--system-prefix "..."]
+    reg = subparsers.add_parser("register", help="Register a plugin by name and local path or GitHub repo")
     reg.add_argument("name", help="Plugin name (e.g. superpowers)")
-    reg.add_argument("path", help="Absolute path to cloned plugin repo")
+    reg.add_argument("path", help="Absolute path or GitHub 'owner/repo' shorthand")
+    reg.add_argument(
+        "--trigger",
+        default=None,
+        help="Slash command that activates the plugin, e.g. /homerun",
+    )
+    reg.add_argument(
+        "--system-prefix",
+        default=None,
+        dest="system_prefix",
+        help="Text prepended to the system prompt for this plugin's cells",
+    )
 
     # battle list
     subparsers.add_parser("list", help="List registered plugins")
 
-    # battle run (default)
+    # battle run
     run_p = subparsers.add_parser("run", help="Run a battle")
-    run_p.add_argument("--plugins", default="", help="Comma-separated plugin names or paths (baseline always included)")
+    run_p.add_argument("--plugins", default="", help="Comma-separated plugin names (baseline always included)")
     run_p.add_argument("--models", default="claude-sonnet-4-6", help="Comma-separated model IDs")
     run_p.add_argument("--test", default="spa", help="Test template name (spa, mobile, tooling)")
     run_p.add_argument("--runs", type=int, default=1, help="Runs per cell (default: 1)")
@@ -170,7 +199,7 @@ def main() -> None:
     run_p.add_argument("--sequential", action="store_true", help="Run cells one at a time instead of in parallel")
 
     # Allow `battle --plugins ...` as shorthand for `battle run --plugins ...`
-    parser.add_argument("--plugins", help="Comma-separated plugin names or paths (shorthand for 'battle run')")
+    parser.add_argument("--plugins", help="Comma-separated plugin names (shorthand for 'battle run')")
     parser.add_argument("--models", default="claude-sonnet-4-6", help=argparse.SUPPRESS)
     parser.add_argument("--test", help=argparse.SUPPRESS, default="spa")
     parser.add_argument("--runs", type=int, help=argparse.SUPPRESS, default=1)
@@ -183,22 +212,20 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "register":
-        cli_register(args.name, args.path)
+        cli_register(args.name, args.path, trigger=args.trigger, system_prefix=args.system_prefix)
     elif args.command == "list":
         cli_list()
     elif args.command == "run" or (args.command is None and args.plugins):
-        plugins = [p.strip() for p in args.plugins.split(",")]
-        models = [m.strip() for m in args.models.split(",")]
-        cli_run(plugins, models, args.test, args.runs, args.judge_model, args.output,
-                ci=args.ci, threshold=args.threshold)
-    elif args.command == "run" or (args.command is None and args.plugins is not None):
         plugins = [p.strip() for p in args.plugins.split(",") if p.strip()] if args.plugins else []
         models = [m.strip() for m in args.models.split(",") if m.strip()]
         if not models:
             parser.error("--models must specify at least one model")
         if args.runs < 1:
             parser.error("--runs must be at least 1")
-        cli_run(plugins, models, args.test, args.runs, args.judge_model, args.output, args.sequential)
+        cli_run(
+            plugins, models, args.test, args.runs, args.judge_model, args.output,
+            ci=args.ci, threshold=args.threshold, sequential=args.sequential,
+        )
     else:
         parser.print_help()
 

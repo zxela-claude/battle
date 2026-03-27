@@ -4,11 +4,8 @@ from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions
 
-# System prompt injected into all plugin cells.
-# Superpowers' brainstorming skill has a HARD-GATE requiring user approval
-# before proceeding. In an automated benchmark there is no human to respond,
-# so Claude should act as both architect and approver: run through the full
-# brainstorm/plan workflow autonomously, approve its own design, then implement.
+# System prompt appended to every plugin cell (after any plugin-specific prefix).
+# Ensures the agent proceeds autonomously in a headless benchmark environment.
 BENCHMARK_SYSTEM = (
     "You are running in an automated benchmark evaluation with no human present. "
     "When a skill or workflow requires user approval, confirmation, or clarification, "
@@ -16,25 +13,6 @@ BENCHMARK_SYSTEM = (
     "Complete any brainstorming or planning steps yourself, approve your own plan, "
     "then implement immediately without waiting for external input."
 )
-
-
-def load_plugin_claude_md(plugin_path: str) -> str:
-    """Read CLAUDE.md from the plugin root, if present."""
-    claude_md = Path(plugin_path) / "CLAUDE.md"
-    if claude_md.exists():
-        return claude_md.read_text()
-    return ""
-
-
-def build_system_prompt(plugin_path: str | None) -> str:
-    """Combine a plugin's CLAUDE.md with the benchmark system prompt."""
-    parts = []
-    if plugin_path:
-        md = load_plugin_claude_md(plugin_path)
-        if md:
-            parts.append(md)
-    parts.append(BENCHMARK_SYSTEM)
-    return "\n\n".join(parts)
 
 
 def install_plugin_settings(plugin_path: str, cwd: str) -> None:
@@ -69,8 +47,9 @@ class PluginAdapter(ABC):
     def trigger_command(self) -> str | None:
         """Optional slash command that activates this plugin, e.g. '/homerun'.
 
-        When set, the runner will prepend this to the task prompt so the plugin
-        activates as intended rather than receiving the raw task text.
+        When set, the runner prepends this to the task prompt so the plugin's
+        skill fires instead of the raw task text reaching a vanilla Claude session.
+        Declared at registration time via: battle register <name> <path> --trigger /cmd
         """
         return None
 
@@ -85,29 +64,24 @@ class PluginAdapter(ABC):
         """Return ClaudeAgentOptions for a single cell run."""
 
 
-_ADAPTER_REGISTRY: dict[str, type[PluginAdapter]] = {}
-
-
-def register_adapter(cls: type[PluginAdapter]) -> type[PluginAdapter]:
-    """Class decorator to register an adapter.
-
-    Instantiates with no args to extract plugin_id for the lookup table.
-    """
-    try:
-        instance = cls()
-        _ADAPTER_REGISTRY[instance.plugin_id] = cls
-    except Exception as exc:
-        import warnings
-        warnings.warn(f"Failed to register adapter {cls.__name__}: {exc}")
-    return cls
-
-
 class GenericPluginAdapter(PluginAdapter):
-    """Adapter for any plugin not covered by a dedicated adapter class."""
+    """Adapter for any registered plugin, driven entirely by config metadata.
 
-    def __init__(self, name: str, plugin_path: str):
+    No magic: invocation trigger and system prompt prefix are declared
+    explicitly at registration time, not scraped from plugin internals.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        plugin_path: str,
+        trigger: str | None = None,
+        system_prefix: str | None = None,
+    ):
         self._name = name
         self._path = plugin_path
+        self._trigger = trigger
+        self._system_prefix = system_prefix
 
     @property
     def plugin_id(self) -> str:
@@ -117,34 +91,49 @@ class GenericPluginAdapter(PluginAdapter):
     def plugin_path(self) -> str | None:
         return self._path or None
 
+    @property
+    def trigger_command(self) -> str | None:
+        return self._trigger
+
     def get_options(self, model: str, cwd: str) -> ClaudeAgentOptions:
+        parts = []
+        if self._system_prefix:
+            parts.append(self._system_prefix)
+        parts.append(BENCHMARK_SYSTEM)
+        system_prompt = "\n\n".join(parts)
+
         return ClaudeAgentOptions(
             cwd=cwd,
             model=model,
-            system_prompt=build_system_prompt(self._path),
+            system_prompt=system_prompt,
             plugins=[{"type": "local", "path": self._path}],
             permission_mode="bypassPermissions",
             allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill"],
+            setting_sources=["user", "project"],
         )
 
 
-def get_adapter(name: str, plugin_path: str | None) -> PluginAdapter:
-    """Resolve adapter by plugin_id name.
+def get_adapter(
+    name: str,
+    plugin_path: str | None = None,
+    trigger: str | None = None,
+    system_prefix: str | None = None,
+) -> PluginAdapter:
+    """Resolve adapter by plugin name.
 
-    Falls back to GenericPluginAdapter for any name not covered by a registered
-    adapter, as long as a plugin_path is provided.
+    'baseline' → BaselineAdapter (no plugin, no trigger).
+    All other names → GenericPluginAdapter configured from registered metadata.
     """
-    if name in _ADAPTER_REGISTRY:
-        cls = _ADAPTER_REGISTRY[name]
-        if plugin_path is not None:
-            return cls(plugin_path=plugin_path)
-        return cls()
-
-    # Fall back to generic adapter when a path is available
+    from .baseline import BaselineAdapter  # local import avoids circular dep
+    if name == "baseline":
+        return BaselineAdapter()
     if plugin_path is not None:
-        return GenericPluginAdapter(name=name, plugin_path=plugin_path)
-
+        return GenericPluginAdapter(
+            name=name,
+            plugin_path=plugin_path,
+            trigger=trigger,
+            system_prefix=system_prefix,
+        )
     raise ValueError(
-        f"Unknown adapter '{name}' and no plugin_path provided. "
-        f"Registered: {list(_ADAPTER_REGISTRY)}"
+        f"Plugin '{name}' has no registered path. Run: battle register {name} <path-or-repo>"
     )

@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .adapters.base import get_adapter
 from .adapters.baseline import BaselineAdapter
@@ -8,8 +8,8 @@ from .runner import CellResult, run_cell
 
 @dataclass
 class MatrixConfig:
-    plugin_names: list[str]         # e.g. ["superpowers", "homerun"]
-    plugin_paths: dict[str, str]    # name -> local path
+    plugin_names: list[str]           # e.g. ["superpowers", "homerun"]
+    plugin_meta: dict[str, dict]      # name -> {path, trigger?, system_prefix?}
     models: list[str]
     prompt: str
     runs_per_cell: int
@@ -24,8 +24,13 @@ async def run_matrix(config: MatrixConfig, sequential: bool = False) -> list[Cel
     # Build adapter list: baseline always first, then named plugins
     adapters = [BaselineAdapter()]
     for name in config.plugin_names:
-        path = config.plugin_paths.get(name)
-        adapters.append(get_adapter(name, plugin_path=path))
+        meta = config.plugin_meta.get(name, {})
+        adapters.append(get_adapter(
+            name,
+            plugin_path=meta.get("path"),
+            trigger=meta.get("trigger"),
+            system_prefix=meta.get("system_prefix"),
+        ))
 
     cell_args = [
         dict(

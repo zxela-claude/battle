@@ -1,10 +1,9 @@
 from claude_agent_sdk import ClaudeAgentOptions
-from .base import BENCHMARK_SYSTEM, PluginAdapter, register_adapter
+from .base import BENCHMARK_SYSTEM, PluginAdapter
 
 
-@register_adapter
 class BaselineAdapter(PluginAdapter):
-    """No-plugin control cell."""
+    """No-plugin control cell — vanilla Claude with no skills or hooks."""
 
     @property
     def plugin_id(self) -> str:
@@ -17,4 +16,5 @@ class BaselineAdapter(PluginAdapter):
             system_prompt=BENCHMARK_SYSTEM,
             permission_mode="bypassPermissions",
             allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+            setting_sources=["user", "project"],
         )

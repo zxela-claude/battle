@@ -2,162 +2,126 @@ import json
 import pytest
 from battle.adapters.base import GenericPluginAdapter, get_adapter, install_plugin_settings
 from battle.adapters.baseline import BaselineAdapter
-from battle.adapters.superpowers import SuperpowersAdapter
-from battle.adapters.homerun import HomerunAdapter
 
+
+# --- BaselineAdapter ---
 
 def test_baseline_adapter_id():
-    adapter = BaselineAdapter()
-    assert adapter.plugin_id == "baseline"
+    assert BaselineAdapter().plugin_id == "baseline"
 
 
 def test_baseline_options_has_no_plugins():
-    adapter = BaselineAdapter()
-    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
-    # Should have no plugins list or empty plugins
-    plugins = getattr(opts, "plugins", None)
-    assert not plugins  # None or []
+    opts = BaselineAdapter().get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert not getattr(opts, "plugins", None)
 
 
 def test_baseline_options_uses_model():
-    adapter = BaselineAdapter()
-    opts = adapter.get_options(model="claude-opus-4-6", cwd="/tmp")
+    opts = BaselineAdapter().get_options(model="claude-opus-4-6", cwd="/tmp")
     assert opts.model == "claude-opus-4-6"
 
 
-def test_superpowers_adapter_id(tmp_path):
-    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
-    assert adapter.plugin_id == "superpowers"
-
-
-def test_superpowers_options_has_plugin(tmp_path):
-    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
-    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
-    assert opts.plugins is not None
-    assert len(opts.plugins) == 1
-    assert opts.plugins[0]["path"] == str(tmp_path)
-
-
-def test_homerun_adapter_id(tmp_path):
-    adapter = HomerunAdapter(plugin_path=str(tmp_path))
-    assert adapter.plugin_id == "homerun"
-
-
-def test_get_adapter_baseline():
-    adapter = get_adapter("baseline", plugin_path=None)
-    assert isinstance(adapter, BaselineAdapter)
-
-
-def test_get_adapter_superpowers(tmp_path):
-    adapter = get_adapter("superpowers", plugin_path=str(tmp_path))
-    assert isinstance(adapter, SuperpowersAdapter)
-
-
-def test_get_adapter_homerun(tmp_path):
-    adapter = get_adapter("homerun", plugin_path=str(tmp_path))
-    assert isinstance(adapter, HomerunAdapter)
-
-
-def test_get_adapter_unknown_raises():
-    # No path → can't create a generic adapter → ValueError
-    with pytest.raises(ValueError):
-        get_adapter("unknown-plugin", plugin_path=None)
-
-
-def test_get_adapter_unknown_with_path_returns_generic(tmp_path):
-    # Unknown name + path → falls back to GenericPluginAdapter
-    adapter = get_adapter("my-custom-plugin", plugin_path=str(tmp_path))
-    assert isinstance(adapter, GenericPluginAdapter)
-    assert adapter.plugin_id == "my-custom-plugin"
-
-
-def test_superpowers_options_has_system_prompt(tmp_path):
-    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
-    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
-    assert opts.system_prompt is not None
-    assert "benchmark" in opts.system_prompt.lower()
-    assert "autonomously" in opts.system_prompt.lower()
-
-
-def test_homerun_options_has_system_prompt(tmp_path):
-    adapter = HomerunAdapter(plugin_path=str(tmp_path))
-    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
-    assert opts.system_prompt is not None
-    assert "autonomously" in opts.system_prompt.lower()
-
-
-# --- trigger_command / wrap_prompt ---
-
-def test_homerun_trigger_command():
-    adapter = HomerunAdapter(plugin_path="/fake")
-    assert adapter.trigger_command == "/homerun"
-
-
-def test_homerun_wrap_prompt():
-    adapter = HomerunAdapter(plugin_path="/fake")
-    assert adapter.wrap_prompt("build a REST API") == "/homerun build a REST API"
-
-
-def test_superpowers_no_trigger_command(tmp_path):
-    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
-    assert adapter.trigger_command is None
-
-
-def test_superpowers_wrap_prompt_passthrough(tmp_path):
-    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
-    assert adapter.wrap_prompt("build a REST API") == "build a REST API"
+def test_baseline_plugin_path_is_none():
+    assert BaselineAdapter().plugin_path is None
 
 
 def test_baseline_no_trigger_command():
-    from battle.adapters.baseline import BaselineAdapter
     adapter = BaselineAdapter()
     assert adapter.trigger_command is None
     assert adapter.wrap_prompt("hello") == "hello"
 
 
-# --- CLAUDE.md injection ---
-
-def test_plugin_claude_md_injected_into_system_prompt(tmp_path):
-    """If the plugin root has a CLAUDE.md, its content should appear in system_prompt."""
-    (tmp_path / "CLAUDE.md").write_text("# My Plugin\nDo special things.")
-    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
-    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
-    assert "Do special things." in opts.system_prompt
-    # BENCHMARK_SYSTEM still present
-    assert "autonomously" in opts.system_prompt.lower()
+def test_baseline_has_setting_sources():
+    opts = BaselineAdapter().get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert opts.setting_sources == ["user", "project"]
 
 
-def test_plugin_without_claude_md_uses_benchmark_only(tmp_path):
-    """No CLAUDE.md → system_prompt is just the benchmark prompt."""
-    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
-    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
-    assert "Do special things." not in opts.system_prompt
-    assert "autonomously" in opts.system_prompt.lower()
+# --- GenericPluginAdapter ---
 
-
-def test_generic_adapter_loads_claude_md(tmp_path):
-    (tmp_path / "CLAUDE.md").write_text("Generic plugin instructions.")
+def test_generic_adapter_id(tmp_path):
     adapter = GenericPluginAdapter(name="my-plugin", plugin_path=str(tmp_path))
+    assert adapter.plugin_id == "my-plugin"
+
+
+def test_generic_adapter_plugin_path(tmp_path):
+    adapter = GenericPluginAdapter(name="x", plugin_path=str(tmp_path))
+    assert adapter.plugin_path == str(tmp_path)
+
+
+def test_generic_adapter_has_plugin_in_options(tmp_path):
+    adapter = GenericPluginAdapter(name="x", plugin_path=str(tmp_path))
     opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
-    assert "Generic plugin instructions." in opts.system_prompt
+    assert opts.plugins == [{"type": "local", "path": str(tmp_path)}]
 
 
-# --- plugin_path property ---
-
-def test_superpowers_plugin_path(tmp_path):
-    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
-    assert adapter.plugin_path == str(tmp_path)
-
-
-def test_homerun_plugin_path(tmp_path):
-    adapter = HomerunAdapter(plugin_path=str(tmp_path))
-    assert adapter.plugin_path == str(tmp_path)
+def test_generic_adapter_has_setting_sources(tmp_path):
+    adapter = GenericPluginAdapter(name="x", plugin_path=str(tmp_path))
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert opts.setting_sources == ["user", "project"]
 
 
-def test_baseline_plugin_path_is_none():
-    from battle.adapters.baseline import BaselineAdapter
-    adapter = BaselineAdapter()
-    assert adapter.plugin_path is None
+def test_generic_adapter_benchmark_system_always_present(tmp_path):
+    adapter = GenericPluginAdapter(name="x", plugin_path=str(tmp_path))
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert "autonomously" in opts.system_prompt.lower()
+
+
+# --- trigger_command / wrap_prompt ---
+
+def test_generic_adapter_no_trigger_by_default(tmp_path):
+    adapter = GenericPluginAdapter(name="x", plugin_path=str(tmp_path))
+    assert adapter.trigger_command is None
+    assert adapter.wrap_prompt("do the thing") == "do the thing"
+
+
+def test_generic_adapter_trigger_command(tmp_path):
+    adapter = GenericPluginAdapter(name="homerun", plugin_path=str(tmp_path), trigger="/homerun")
+    assert adapter.trigger_command == "/homerun"
+    assert adapter.wrap_prompt("build a REST API") == "/homerun build a REST API"
+
+
+def test_generic_adapter_no_system_prefix(tmp_path):
+    adapter = GenericPluginAdapter(name="x", plugin_path=str(tmp_path))
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    # No extra prefix — system prompt is BENCHMARK_SYSTEM only
+    assert opts.system_prompt.strip().startswith("You are running in an automated benchmark")
+
+
+def test_generic_adapter_system_prefix_prepended(tmp_path):
+    adapter = GenericPluginAdapter(
+        name="x", plugin_path=str(tmp_path),
+        system_prefix="You are a wizard plugin.",
+    )
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert opts.system_prompt.startswith("You are a wizard plugin.")
+    assert "autonomously" in opts.system_prompt.lower()
+
+
+# --- get_adapter ---
+
+def test_get_adapter_baseline():
+    assert isinstance(get_adapter("baseline"), BaselineAdapter)
+
+
+def test_get_adapter_with_path_returns_generic(tmp_path):
+    adapter = get_adapter("superpowers", plugin_path=str(tmp_path))
+    assert isinstance(adapter, GenericPluginAdapter)
+    assert adapter.plugin_id == "superpowers"
+
+
+def test_get_adapter_passes_trigger(tmp_path):
+    adapter = get_adapter("homerun", plugin_path=str(tmp_path), trigger="/homerun")
+    assert adapter.trigger_command == "/homerun"
+
+
+def test_get_adapter_passes_system_prefix(tmp_path):
+    adapter = get_adapter("myplugin", plugin_path=str(tmp_path), system_prefix="Be amazing.")
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert opts.system_prompt.startswith("Be amazing.")
+
+
+def test_get_adapter_no_path_raises():
+    with pytest.raises(ValueError):
+        get_adapter("unknown-plugin", plugin_path=None)
 
 
 # --- install_plugin_settings ---
@@ -180,7 +144,6 @@ def test_install_plugin_settings_copies_file(tmp_path):
 
 
 def test_install_plugin_settings_noop_when_missing(tmp_path):
-    """No .claude/settings.json in plugin → cwd stays untouched."""
     plugin_dir = tmp_path / "plugin"
     plugin_dir.mkdir()
     cwd = tmp_path / "cwd"

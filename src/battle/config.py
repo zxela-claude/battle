@@ -17,14 +17,25 @@ def _is_github_shorthand(s: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", s))
 
 
+def _normalize(val: dict | str) -> dict:
+    """Normalise a stored plugin entry to the canonical dict form.
+
+    Older versions stored just a path string. Accept both for backward compat.
+    """
+    if isinstance(val, str):
+        return {"path": val}
+    return val
+
+
 class Config:
     def __init__(self):
         self._home = battle_home()
         self._home.mkdir(parents=True, exist_ok=True)
         self._path = self._home / "plugins.json"
-        self._data: dict[str, str] = {}
+        self._data: dict[str, dict] = {}
         if self._path.exists():
-            self._data = json.loads(self._path.read_text())
+            raw = json.loads(self._path.read_text())
+            self._data = {k: _normalize(v) for k, v in raw.items()}
 
     def _save(self):
         self._path.write_text(json.dumps(self._data, indent=2))
@@ -64,13 +75,39 @@ class Config:
         subprocess.run(["git", "-C", str(dest), "submodule", "update", "--init", "--recursive"], check=True, timeout=120)
         return self._resolve_plugin_source(dest, name)
 
-    def register(self, name: str, path: str) -> None:
+    def register(
+        self,
+        name: str,
+        path: str,
+        trigger: str | None = None,
+        system_prefix: str | None = None,
+    ) -> None:
+        """Register a plugin by name and source path (or GitHub shorthand).
+
+        Args:
+            name:          Short plugin identifier, e.g. "homerun".
+            path:          Local filesystem path or "owner/repo" GitHub shorthand.
+            trigger:       Optional slash command that activates the plugin,
+                           e.g. "/homerun".  When set, battle prepends this to
+                           the task prompt so the plugin's skill fires correctly.
+            system_prefix: Optional text prepended to the benchmark system prompt.
+                           Useful for plugins whose behaviour depends on a persona
+                           or context block in the system prompt.
+        """
         if _is_github_shorthand(path):
             local_path = self._clone_or_pull(name, path)
         else:
             local_path = path
-        self._data[name] = local_path
+
+        meta: dict = {"path": local_path}
+        if trigger is not None:
+            meta["trigger"] = trigger
+        if system_prefix is not None:
+            meta["system_prefix"] = system_prefix
+
+        self._data[name] = meta
         self._save()
+
         # Warn if the resolved path has no plugin.json — plugin won't load
         plugin_json = Path(local_path) / ".claude-plugin" / "plugin.json"
         if not plugin_json.exists():
@@ -79,14 +116,21 @@ class Config:
                 f"'{name}' will behave like baseline (no plugin skills loaded)."
             )
 
-    def list_plugins(self) -> dict[str, str]:
-        return dict(self._data)
+    def get_meta(self, name: str) -> dict:
+        """Return the full metadata dict for a registered plugin."""
+        if name not in self._data:
+            raise KeyError(f"Plugin '{name}' not registered. Run: battle register {name} <path-or-repo>")
+        return dict(self._data[name])
+
+    def list_plugins(self) -> dict[str, dict]:
+        """Return all registered plugins as {name: meta_dict}."""
+        return {k: dict(v) for k, v in self._data.items()}
 
     def resolve(self, name_or_path: str) -> str:
-        # Absolute paths pass through directly
+        """Return the local filesystem path for a plugin name or absolute path."""
         p = Path(name_or_path)
         if p.is_absolute() and p.exists():
             return str(p)
         if name_or_path in self._data:
-            return self._data[name_or_path]
+            return self._data[name_or_path]["path"]
         raise KeyError(f"Plugin '{name_or_path}' not registered. Run: battle register {name_or_path} /path/to/plugin")
