@@ -59,7 +59,9 @@ class Config:
             subprocess.run(["git", "-C", str(dest), "pull", "--ff-only"], check=True, timeout=120)
         else:
             url = f"https://github.com/{repo}.git"
-            subprocess.run(["git", "clone", url, str(dest)], check=True, timeout=120)
+            subprocess.run(["git", "clone", "--recurse-submodules", url, str(dest)], check=True, timeout=120)
+        # Ensure submodules are initialized (--recurse-submodules can silently fail)
+        subprocess.run(["git", "-C", str(dest), "submodule", "update", "--init", "--recursive"], check=True, timeout=120)
         return self._resolve_plugin_source(dest, name)
 
     def register(self, name: str, path: str) -> None:
