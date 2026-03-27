@@ -135,6 +135,73 @@ battle/
 
 All cells run in parallel via `asyncio.gather()`. Each cell gets an isolated temp directory; artifacts are copied to permanent storage after the session completes.
 
+## CI Integration
+
+Battle can run in CI pipelines and fail the build if any plugin falls below a score threshold.
+
+### Flags
+
+- `--ci` — exit with code 1 if any cell scores below the threshold
+- `--threshold <n>` — minimum acceptable overall score, 0–10 (default: `6.0`)
+
+### GitHub Actions
+
+An example workflow is included at [`.github/workflows/battle-benchmark.yml`](.github/workflows/battle-benchmark.yml). It runs on PRs and nightly:
+
+```yaml
+- name: Run benchmark
+  run: |
+    battle run \
+      --plugins superpowers,homerun \
+      --models claude-sonnet-4-6 \
+      --test spa \
+      --output all \
+      --ci \
+      --threshold 6.0
+  env:
+    CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+```
+
+Reports (terminal output, `report.html`, `report.json`) are uploaded as build artifacts.
+
+### JSON output format
+
+The `report.json` produced by `--output json` (or `all`) contains the full run manifest:
+
+```json
+{
+  "run_id": "1711234567-a1b2c3d4",
+  "timestamp": 1711234567.0,
+  "plugin_names": ["superpowers", "homerun"],
+  "models": ["claude-sonnet-4-6"],
+  "test_name": "spa",
+  "total_cost_usd": 0.042,
+  "cells": [
+    {
+      "plugin_id": "baseline",
+      "model": "claude-sonnet-4-6",
+      "run_index": 0,
+      "duration_s": 45.2,
+      "cost_usd": 0.007,
+      "artifact_files": ["src/App.tsx", "src/main.tsx"],
+      "rubric": {
+        "ac_completeness": 7.0,
+        "code_style": 8.0,
+        "code_quality": 7.5,
+        "security": 9.0,
+        "bugs": 8.0,
+        "notes": "..."
+      },
+      "static": {
+        "error_count": 0,
+        "warning_count": 2,
+        "tool": "eslint"
+      }
+    }
+  ]
+}
+```
+
 ## Development
 
 ```bash

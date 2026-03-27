@@ -1,0 +1,62 @@
+name: Plugin Benchmark
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Runs nightly at 2am UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      plugins:
+        description: 'Comma-separated plugin names'
+        required: false
+        default: 'superpowers,homerun'
+      threshold:
+        description: 'Minimum score threshold (0-10)'
+        required: false
+        default: '6.0'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install battle
+        run: pip install -e .
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Register plugins
+        run: |
+          battle register superpowers obra/superpowers
+          battle register homerun zxela/claude-plugins
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      - name: Run benchmark
+        run: |
+          battle run \
+            --plugins ${{ github.event.inputs.plugins || 'superpowers,homerun' }} \
+            --models claude-sonnet-4-6 \
+            --test spa \
+            --runs 1 \
+            --output all \
+            --ci \
+            --threshold ${{ github.event.inputs.threshold || '6.0' }}
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: battle-reports
+          path: ~/.battle/runs/*/
+          retention-days: 30
