@@ -9,7 +9,7 @@ from claude_agent_sdk import query, ResultMessage
 from .adapters.base import PluginAdapter, install_plugin_settings
 
 # Maximum time (seconds) for a single cell run
-CELL_TIMEOUT = 600
+CELL_TIMEOUT = 900
 
 
 @dataclass

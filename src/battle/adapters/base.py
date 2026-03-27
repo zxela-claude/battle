@@ -108,7 +108,10 @@ class GenericPluginAdapter(PluginAdapter):
             system_prompt=system_prompt,
             plugins=[{"type": "local", "path": self._path}],
             permission_mode="bypassPermissions",
-            allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill"],
+            allowed_tools=[
+                "Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill",
+                "Agent", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
+            ],
             setting_sources=["user", "project"],
         )
 
