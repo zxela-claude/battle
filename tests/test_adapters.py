@@ -1,5 +1,6 @@
+import json
 import pytest
-from battle.adapters.base import GenericPluginAdapter, get_adapter
+from battle.adapters.base import GenericPluginAdapter, get_adapter, install_plugin_settings
 from battle.adapters.baseline import BaselineAdapter
 from battle.adapters.superpowers import SuperpowersAdapter
 from battle.adapters.homerun import HomerunAdapter
@@ -139,3 +140,50 @@ def test_generic_adapter_loads_claude_md(tmp_path):
     adapter = GenericPluginAdapter(name="my-plugin", plugin_path=str(tmp_path))
     opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
     assert "Generic plugin instructions." in opts.system_prompt
+
+
+# --- plugin_path property ---
+
+def test_superpowers_plugin_path(tmp_path):
+    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
+    assert adapter.plugin_path == str(tmp_path)
+
+
+def test_homerun_plugin_path(tmp_path):
+    adapter = HomerunAdapter(plugin_path=str(tmp_path))
+    assert adapter.plugin_path == str(tmp_path)
+
+
+def test_baseline_plugin_path_is_none():
+    from battle.adapters.baseline import BaselineAdapter
+    adapter = BaselineAdapter()
+    assert adapter.plugin_path is None
+
+
+# --- install_plugin_settings ---
+
+def test_install_plugin_settings_copies_file(tmp_path):
+    plugin_dir = tmp_path / "plugin"
+    plugin_dir.mkdir()
+    claude_dir = plugin_dir / ".claude"
+    claude_dir.mkdir()
+    settings = {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo hook"}]}]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings))
+
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    install_plugin_settings(str(plugin_dir), str(cwd))
+
+    dest = cwd / ".claude" / "settings.json"
+    assert dest.exists()
+    assert json.loads(dest.read_text()) == settings
+
+
+def test_install_plugin_settings_noop_when_missing(tmp_path):
+    """No .claude/settings.json in plugin → cwd stays untouched."""
+    plugin_dir = tmp_path / "plugin"
+    plugin_dir.mkdir()
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    install_plugin_settings(str(plugin_dir), str(cwd))
+    assert not (cwd / ".claude" / "settings.json").exists()

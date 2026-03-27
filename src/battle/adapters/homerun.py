@@ -13,6 +13,10 @@ class HomerunAdapter(PluginAdapter):
         return "homerun"
 
     @property
+    def plugin_path(self) -> str | None:
+        return self._path or None
+
+    @property
     def trigger_command(self) -> str:
         return "/homerun"
 

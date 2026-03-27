@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from claude_agent_sdk import query, ResultMessage
 
-from .adapters.base import PluginAdapter
+from .adapters.base import PluginAdapter, install_plugin_settings
 
 # Maximum time (seconds) for a single cell run
 CELL_TIMEOUT = 600
@@ -35,6 +35,9 @@ async def run_cell(
     """Run one (plugin, model) cell and return its result."""
     cwd = tempfile.mkdtemp(prefix=f"battle_{adapter.plugin_id}_{run_index}_")
     try:
+        # Install plugin settings (hooks etc.) into cwd so Claude Code picks them up
+        if adapter.plugin_path:
+            install_plugin_settings(adapter.plugin_path, cwd)
         options = adapter.get_options(model=model, cwd=cwd)
         result_text = ""
         cost_usd = 0.0

@@ -12,6 +12,10 @@ class SuperpowersAdapter(PluginAdapter):
     def plugin_id(self) -> str:
         return "superpowers"
 
+    @property
+    def plugin_path(self) -> str | None:
+        return self._path or None
+
     def get_options(self, model: str, cwd: str) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             cwd=cwd,

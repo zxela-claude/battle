@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import shutil
 from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions
@@ -36,6 +37,21 @@ def build_system_prompt(plugin_path: str | None) -> str:
     return "\n\n".join(parts)
 
 
+def install_plugin_settings(plugin_path: str, cwd: str) -> None:
+    """Copy the plugin's .claude/settings.json into cwd so hooks are discovered.
+
+    Claude Code finds settings by scanning up from the cwd. Writing the plugin's
+    settings here mirrors how hooks work during a real interactive session.
+    Skills are handled separately via ClaudeAgentOptions.plugins.
+    """
+    src = Path(plugin_path) / ".claude" / "settings.json"
+    if not src.exists():
+        return
+    dest_dir = Path(cwd) / ".claude"
+    dest_dir.mkdir(exist_ok=True)
+    shutil.copy2(src, dest_dir / "settings.json")
+
+
 class PluginAdapter(ABC):
     """Base class for all plugin adapters."""
 
@@ -43,6 +59,11 @@ class PluginAdapter(ABC):
     @abstractmethod
     def plugin_id(self) -> str:
         """Short identifier, e.g. 'superpowers', 'homerun', 'baseline'."""
+
+    @property
+    def plugin_path(self) -> str | None:
+        """Filesystem path to the installed plugin root, or None for baseline."""
+        return None
 
     @property
     def trigger_command(self) -> str | None:
@@ -91,6 +112,10 @@ class GenericPluginAdapter(PluginAdapter):
     @property
     def plugin_id(self) -> str:
         return self._name
+
+    @property
+    def plugin_path(self) -> str | None:
+        return self._path or None
 
     def get_options(self, model: str, cwd: str) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
