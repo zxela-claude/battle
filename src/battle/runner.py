@@ -4,9 +4,47 @@ import shutil
 import tempfile
 from dataclasses import dataclass, field
 
-from claude_agent_sdk import query, ResultMessage
+from claude_agent_sdk import query, AssistantMessage, ResultMessage
 
 from .adapters.base import PluginAdapter, install_plugin_settings
+
+# Per-million-token pricing (USD) by model for cost estimation from token counts.
+# Used as fallback when a ResultMessage (which carries total_cost_usd) is unavailable,
+# e.g. when a cell times out before the session completes.
+_MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # (input_cost_per_million, output_cost_per_million)
+    "claude-sonnet-4-6":      (3.0,  15.0),
+    "claude-sonnet-4-5":      (3.0,  15.0),
+    "claude-opus-4-6":        (15.0, 75.0),
+    "claude-opus-4-5":        (15.0, 75.0),
+    "claude-haiku-4-5":       (0.80,  4.0),
+}
+
+
+def _estimate_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_creation_tokens: int = 0,
+    cache_read_tokens: int = 0,
+) -> float:
+    """Estimate cost in USD from token counts and model pricing.
+
+    The Anthropic API reports three disjoint input token buckets:
+      - input_tokens: uncached input (standard rate)
+      - cache_creation_input_tokens: written to cache (1.25x input rate)
+      - cache_read_input_tokens: read from cache (0.1x input rate)
+    """
+    pricing = _MODEL_PRICING.get(model)
+    if pricing is None:
+        pricing = (3.0, 15.0)
+    inp_rate, out_rate = pricing
+    input_cost = (
+        input_tokens * inp_rate
+        + cache_creation_tokens * inp_rate * 1.25
+        + cache_read_tokens * inp_rate * 0.10
+    )
+    return (input_cost + output_tokens * out_rate) / 1_000_000
 
 # Maximum time (seconds) for a single cell run
 CELL_TIMEOUT = 900
@@ -44,11 +82,27 @@ async def run_cell(
         num_turns = 0
         error = None
 
+        # Incremental tracking for cost estimation on timeout
+        _streaming_turns = 0
+        _total_input_tokens = 0
+        _total_output_tokens = 0
+        _total_cache_creation_tokens = 0
+        _total_cache_read_tokens = 0
+
         try:
             async def _run_query() -> None:
                 nonlocal result_text, cost_usd, num_turns
+                nonlocal _streaming_turns, _total_input_tokens, _total_output_tokens
+                nonlocal _total_cache_creation_tokens, _total_cache_read_tokens
                 async for message in query(prompt=adapter.wrap_prompt(prompt), options=options):
-                    if isinstance(message, ResultMessage):
+                    if isinstance(message, AssistantMessage):
+                        _streaming_turns += 1
+                        usage = message.usage or {}
+                        _total_input_tokens += usage.get("input_tokens", 0)
+                        _total_output_tokens += usage.get("output_tokens", 0)
+                        _total_cache_creation_tokens += usage.get("cache_creation_input_tokens", 0)
+                        _total_cache_read_tokens += usage.get("cache_read_input_tokens", 0)
+                    elif isinstance(message, ResultMessage):
                         result_text = message.result or ""
                         cost_usd = message.total_cost_usd or 0.0
                         num_turns = message.num_turns or 0
@@ -58,6 +112,16 @@ async def run_cell(
             error = f"Cell timed out after {CELL_TIMEOUT}s"
         except Exception as e:
             error = str(e)
+
+        # If we never got a ResultMessage (timeout / error), use streaming data
+        total_tokens = _total_input_tokens + _total_cache_creation_tokens + _total_cache_read_tokens
+        if cost_usd == 0.0 and total_tokens > 0:
+            cost_usd = _estimate_cost(
+                model, _total_input_tokens, _total_output_tokens,
+                _total_cache_creation_tokens, _total_cache_read_tokens,
+            )
+        if num_turns == 0 and _streaming_turns > 0:
+            num_turns = _streaming_turns
 
         # Collect artifact files (relative paths), skipping vendored dirs
         skip_dirs = {"node_modules", ".git", "__pycache__", ".next", ".cache"}
