@@ -112,7 +112,11 @@ class GenericPluginAdapter(PluginAdapter):
                 "Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill",
                 "Agent", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet",
             ],
-            setting_sources=["user", "project"],
+            # "project" only — the plugin's settings.json is already copied into
+            # the cwd by install_plugin_settings(), so "project" picks it up.
+            # Excluding "user" prevents globally installed plugins from leaking
+            # into cells that are supposed to test a specific plugin in isolation.
+            setting_sources=["project"],
         )
 
 
