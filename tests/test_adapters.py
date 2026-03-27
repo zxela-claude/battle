@@ -83,3 +83,59 @@ def test_homerun_options_has_system_prompt(tmp_path):
     opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
     assert opts.system_prompt is not None
     assert "autonomously" in opts.system_prompt.lower()
+
+
+# --- trigger_command / wrap_prompt ---
+
+def test_homerun_trigger_command():
+    adapter = HomerunAdapter(plugin_path="/fake")
+    assert adapter.trigger_command == "/homerun"
+
+
+def test_homerun_wrap_prompt():
+    adapter = HomerunAdapter(plugin_path="/fake")
+    assert adapter.wrap_prompt("build a REST API") == "/homerun build a REST API"
+
+
+def test_superpowers_no_trigger_command(tmp_path):
+    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
+    assert adapter.trigger_command is None
+
+
+def test_superpowers_wrap_prompt_passthrough(tmp_path):
+    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
+    assert adapter.wrap_prompt("build a REST API") == "build a REST API"
+
+
+def test_baseline_no_trigger_command():
+    from battle.adapters.baseline import BaselineAdapter
+    adapter = BaselineAdapter()
+    assert adapter.trigger_command is None
+    assert adapter.wrap_prompt("hello") == "hello"
+
+
+# --- CLAUDE.md injection ---
+
+def test_plugin_claude_md_injected_into_system_prompt(tmp_path):
+    """If the plugin root has a CLAUDE.md, its content should appear in system_prompt."""
+    (tmp_path / "CLAUDE.md").write_text("# My Plugin\nDo special things.")
+    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert "Do special things." in opts.system_prompt
+    # BENCHMARK_SYSTEM still present
+    assert "autonomously" in opts.system_prompt.lower()
+
+
+def test_plugin_without_claude_md_uses_benchmark_only(tmp_path):
+    """No CLAUDE.md → system_prompt is just the benchmark prompt."""
+    adapter = SuperpowersAdapter(plugin_path=str(tmp_path))
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert "Do special things." not in opts.system_prompt
+    assert "autonomously" in opts.system_prompt.lower()
+
+
+def test_generic_adapter_loads_claude_md(tmp_path):
+    (tmp_path / "CLAUDE.md").write_text("Generic plugin instructions.")
+    adapter = GenericPluginAdapter(name="my-plugin", plugin_path=str(tmp_path))
+    opts = adapter.get_options(model="claude-sonnet-4-6", cwd="/tmp")
+    assert "Generic plugin instructions." in opts.system_prompt

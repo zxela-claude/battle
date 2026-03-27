@@ -1,5 +1,5 @@
 from claude_agent_sdk import ClaudeAgentOptions
-from .base import BENCHMARK_SYSTEM, PluginAdapter, register_adapter
+from .base import PluginAdapter, build_system_prompt, register_adapter
 
 
 @register_adapter
@@ -12,11 +12,15 @@ class HomerunAdapter(PluginAdapter):
     def plugin_id(self) -> str:
         return "homerun"
 
+    @property
+    def trigger_command(self) -> str:
+        return "/homerun"
+
     def get_options(self, model: str, cwd: str) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             cwd=cwd,
             model=model,
-            system_prompt=BENCHMARK_SYSTEM,
+            system_prompt=build_system_prompt(self._path),
             plugins=[{"type": "local", "path": self._path}],
             permission_mode="bypassPermissions",
             allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill"],

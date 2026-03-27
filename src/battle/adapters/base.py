@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
+
 from claude_agent_sdk import ClaudeAgentOptions
 
 # System prompt injected into all plugin cells.
@@ -15,6 +17,25 @@ BENCHMARK_SYSTEM = (
 )
 
 
+def load_plugin_claude_md(plugin_path: str) -> str:
+    """Read CLAUDE.md from the plugin root, if present."""
+    claude_md = Path(plugin_path) / "CLAUDE.md"
+    if claude_md.exists():
+        return claude_md.read_text()
+    return ""
+
+
+def build_system_prompt(plugin_path: str | None) -> str:
+    """Combine a plugin's CLAUDE.md with the benchmark system prompt."""
+    parts = []
+    if plugin_path:
+        md = load_plugin_claude_md(plugin_path)
+        if md:
+            parts.append(md)
+    parts.append(BENCHMARK_SYSTEM)
+    return "\n\n".join(parts)
+
+
 class PluginAdapter(ABC):
     """Base class for all plugin adapters."""
 
@@ -22,6 +43,21 @@ class PluginAdapter(ABC):
     @abstractmethod
     def plugin_id(self) -> str:
         """Short identifier, e.g. 'superpowers', 'homerun', 'baseline'."""
+
+    @property
+    def trigger_command(self) -> str | None:
+        """Optional slash command that activates this plugin, e.g. '/homerun'.
+
+        When set, the runner will prepend this to the task prompt so the plugin
+        activates as intended rather than receiving the raw task text.
+        """
+        return None
+
+    def wrap_prompt(self, prompt: str) -> str:
+        """Wrap the task prompt with the plugin's trigger command if needed."""
+        if self.trigger_command:
+            return f"{self.trigger_command} {prompt}"
+        return prompt
 
     @abstractmethod
     def get_options(self, model: str, cwd: str) -> ClaudeAgentOptions:
@@ -60,7 +96,7 @@ class GenericPluginAdapter(PluginAdapter):
         return ClaudeAgentOptions(
             cwd=cwd,
             model=model,
-            system_prompt=BENCHMARK_SYSTEM,
+            system_prompt=build_system_prompt(self._path),
             plugins=[{"type": "local", "path": self._path}],
             permission_mode="bypassPermissions",
             allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill"],

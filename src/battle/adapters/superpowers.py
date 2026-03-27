@@ -1,5 +1,5 @@
 from claude_agent_sdk import ClaudeAgentOptions
-from .base import BENCHMARK_SYSTEM, PluginAdapter, register_adapter
+from .base import PluginAdapter, build_system_prompt, register_adapter
 
 
 @register_adapter
@@ -16,7 +16,7 @@ class SuperpowersAdapter(PluginAdapter):
         return ClaudeAgentOptions(
             cwd=cwd,
             model=model,
-            system_prompt=BENCHMARK_SYSTEM,
+            system_prompt=build_system_prompt(self._path),
             plugins=[{"type": "local", "path": self._path}],
             permission_mode="bypassPermissions",
             allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Skill", "Agent", "TaskCreate", "TaskUpdate"],

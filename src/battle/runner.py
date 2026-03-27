@@ -44,7 +44,7 @@ async def run_cell(
         try:
             async def _run_query() -> None:
                 nonlocal result_text, cost_usd, num_turns
-                async for message in query(prompt=prompt, options=options):
+                async for message in query(prompt=adapter.wrap_prompt(prompt), options=options):
                     if isinstance(message, ResultMessage):
                         result_text = message.result or ""
                         cost_usd = message.total_cost_usd or 0.0
